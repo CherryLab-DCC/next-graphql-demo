@@ -6,6 +6,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "prettier": "prettier --check --ignore-path .gitignore '**/*.{js,json,ts,tsx}'",
     "test": "jest --watch",
     "test:ci": "jest --ci"
   },
@@ -21,7 +22,9 @@
     "@types/react": "17.0.38",
     "eslint": "8.6.0",
     "eslint-config-next": "12.0.8",
+    "eslint-config-prettier": "^8.3.0",
     "jest": "^27.4.7",
+    "prettier": "^2.5.1",
     "typescript": "4.5.4"
   }
 }
