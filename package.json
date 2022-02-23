@@ -11,14 +11,23 @@
     "test:ci": "jest --ci"
   },
   "dependencies": {
+    "graphql": "^16.3.0",
+    "graphql-helix": "^1.11.0",
+    "graphql-type-json": "^0.3.2",
     "next": "12.0.8",
+    "pg": "^8.7.1",
+    "pg-native": "^3.0.0",
+    "pg-pool": "^3.4.1",
     "react": "17.0.2",
     "react-dom": "17.0.2"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^5.16.1",
     "@testing-library/react": "^12.1.2",
+    "@types/graphql-type-json": "^0.3.2",
     "@types/node": "17.0.8",
+    "@types/pg": "^8.6.4",
+    "@types/pg-pool": "^2.0.3",
     "@types/react": "17.0.38",
     "eslint": "8.6.0",
     "eslint-config-next": "12.0.8",
