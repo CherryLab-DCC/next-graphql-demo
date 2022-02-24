@@ -13,6 +13,11 @@ import {
   type GraphQLUnionTypeConfig,
   type GraphQLTypeResolver,
 } from "graphql";
+import {
+  connectionArgs,
+  connectionDefinitions,
+  connectionFromArray,
+} from "graphql-relay";
 import { GraphQLJSON, GraphQLJSONObject } from "graphql-type-json";
 import { type DB, type Json, type JsonObject } from "./DB";
 
@@ -112,13 +117,42 @@ const resolveRefList: GraphQLFieldResolver<Source, Context> = (
   );
 };
 
-function makeResolveJsonPath(
-  jsonPath: string
-): GraphQLFieldResolver<Source, Context> {
-  return (obj, _, { db }) =>
-    db
-      .queryJsonPath(jsonPath, obj)
-      .then((ids) => ids.map((id) => db.getByUUID(id)));
+function makeJsonPathConnection(
+  types: MappedTypes,
+  jsonPath: string,
+  fromType: string,
+  description?: string
+): GraphQLFieldConfig<Source, Context> {
+  let connectionType = types[fromType + "Connection"];
+  if (!connectionType) {
+    connectionType = connectionDefinitions({
+      name: fromType,
+      nodeType: new GraphQLNonNull(types[fromType]!),
+      resolveNode: ({ node }, _, { db }) => {
+        return db.getByUUID(node);
+      },
+      connectionFields: {
+        totalCount: { type: new GraphQLNonNull(GraphQLInt) },
+      },
+    }).connectionType;
+    types[fromType + "Connection"] = connectionType;
+  }
+  return {
+    type: connectionType,
+    description,
+    args: {
+      filter: { type: GraphQLString },
+      orderBy: { type: GraphQLString },
+      ...connectionArgs,
+    },
+    resolve: async (obj, args, { db }) => {
+      const path = args.filter ? `(${jsonPath}) && (${args.filter})` : jsonPath;
+      // Postgres GIN index does not help with sorting so faster to just fetch whole array here.
+      const ids = await db.queryJsonPath(path, obj, args.orderBy ?? undefined);
+      // This risks page tearing when data is updated but meh.
+      return { totalCount: ids.length, ...connectionFromArray(ids, args) };
+    },
+  };
 }
 
 function normalizeLinkTo(
@@ -170,18 +204,15 @@ function makeField(
       if (typeof fromType !== "string" || typeof fromProperty !== "string") {
         throw new Error(`Malformed linkFrom: ${items["linkFrom"]}`);
       }
-      const inner = types[fromType];
-      if (inner === undefined) {
+      if (types[fromType] === undefined) {
         throw new Error(`Unknown linkFrom: ${items["linkFrom"]}`);
       }
       const jsonPath =
         typeof items["linkFromJsonPath"] === "string"
           ? items["linkFromJsonPath"]
           : defaultLinkFromJsonPath(fromType, fromProperty);
-      const type = new GraphQLNonNull(
-        new GraphQLList(new GraphQLNonNull(inner))
-      );
-      return { type, description, resolve: makeResolveJsonPath(jsonPath) };
+
+      return makeJsonPathConnection(types, jsonPath, fromType, description);
     }
   }
 

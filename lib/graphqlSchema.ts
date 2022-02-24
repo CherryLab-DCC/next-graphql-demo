@@ -2,9 +2,14 @@ import {
   GraphQLSchema,
   GraphQLObjectType,
   GraphQLString,
-  GraphQLList,
   GraphQLNonNull,
+  GraphQLInt,
 } from "graphql";
+import {
+  connectionArgs,
+  connectionDefinitions,
+  connectionFromArray,
+} from "graphql-relay";
 import jsonSchemaToGraphQL, {
   type Source,
   type Context,
@@ -25,6 +30,16 @@ const itemType = types["Item"];
 if (!itemType) {
   throw new Error("Expectd an Item");
 }
+
+const { connectionType: itemConnection } = connectionDefinitions({
+  nodeType: new GraphQLNonNull(itemType),
+  resolveNode: ({ node }, _, { db }) => {
+    return db.getByUUID(node);
+  },
+  connectionFields: {
+    totalCount: { type: new GraphQLNonNull(GraphQLInt) },
+  },
+});
 
 const query = new GraphQLObjectType<Source, Context>({
   name: "Query",
@@ -67,14 +82,21 @@ const query = new GraphQLObjectType<Source, Context>({
       },
     },
     queryJsonPath: {
-      type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(itemType))),
+      type: new GraphQLNonNull(itemConnection), //new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(itemType))),
       args: {
         path: { type: new GraphQLNonNull(GraphQLString) },
+        orderBy: { type: GraphQLString },
+        ...connectionArgs,
       },
-      resolve: (_, { path }, { db }) => {
-        return db
-          .queryJsonPath(path)
-          .then((ids) => ids.map((id) => db.getByUUID(id)));
+      resolve: async (_, args, { db }) => {
+        // Postgres GIN index does not help with sorting so faster to just fetch whole array here.
+        const ids = await db.queryJsonPath(
+          args.path,
+          null,
+          args.orderBy ?? undefined
+        );
+        // This risks page tearing when data is updated but meh.
+        return { totalCount: ids.length, ...connectionFromArray(ids, args) };
       },
     },
   }),

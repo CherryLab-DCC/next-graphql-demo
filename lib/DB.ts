@@ -49,26 +49,32 @@ export class DB<TSource extends JsonObject> {
     this.pending_getByUUID = new Set();
     this.pending_getByUniqueKey = new Set();
     this.pending_queryJsonPath = new Set();
-    const values = [
-      JSON.stringify(pending_getByUUID),
-      `[${pending_getByUniqueKey.join(",")}]`,
-      JSON.stringify(pending_queryJsonPath),
-    ];
+    const options = {
+      id: pending_getByUUID,
+      uk: pending_getByUniqueKey,
+      jp: pending_queryJsonPath.map((query) => JSON.parse(query)),
+    };
+    const values = [JSON.stringify(options)];
     const name = "fetchbatch";
     const text = `\
 WITH filtered AS NOT MATERIALIZED (
   SELECT * FROM items WHERE items.allowed @@ '$.view[*] == "system.Everyone"'
-)
+),
+options AS MATERIALIZED (SELECT $1::jsonb as options)
 SELECT 'id' as kind, null AS index, filtered.id::text AS id, object
-FROM filtered, jsonb_array_elements_text($1::jsonb) AS ids(id)
+FROM options, filtered, jsonb_array_elements_text(options->'id') AS ids(id)
 WHERE filtered.id = ids.id::uuid
 UNION ALL
 SELECT 'uk' as kind, index - 1, filtered.id::text AS id, object
-FROM filtered, jsonb_array_elements_text($2::jsonb) WITH ORDINALITY queries(query, index)
-WHERE filtered.uniquekeys @> query::jsonb
+FROM options, filtered, jsonb_array_elements_text(options->'uk') WITH ORDINALITY queries(query, index)
+WHERE uniquekeys @@ query::jsonpath
 UNION ALL
-SELECT 'jp' as kind, index - 1, null AS id, COALESCE((SELECT jsonb_agg(id) FROM filtered WHERE object @@ query::jsonpath), '[]'::jsonb) AS object
-FROM jsonb_array_elements_text($3::jsonb) WITH ORDINALITY queries(query, index)
+SELECT 'jp' as kind, index - 1, null AS id, COALESCE((
+  SELECT jsonb_agg(id ORDER BY object->(query->>'orderBy'), id)
+  FROM filtered
+  WHERE object @@ (query->>'path')::jsonpath
+), '[]'::jsonb) AS object
+FROM options, jsonb_array_elements(options->'jp') WITH ORDINALITY queries(query, index)
 ;`;
     type Row =
       | { kind: "id"; index: null; id: string; object: TSource }
@@ -121,7 +127,7 @@ FROM jsonb_array_elements_text($3::jsonb) WITH ORDINALITY queries(query, index)
     return this.cached_getByUUID.get(itemid);
   }
   async getByUniqueKey(ns: string, name: string): Promise<TSource | undefined> {
-    const query = JSON.stringify({ [ns]: [name] });
+    const query = `$.${JSON.stringify(ns)}==${JSON.stringify(name)}`;
     let itemid = this.cached_getByUniqueKey.get(query);
     if (itemid === undefined) {
       this.pending_getByUniqueKey.add(query);
@@ -133,15 +139,19 @@ FROM jsonb_array_elements_text($3::jsonb) WITH ORDINALITY queries(query, index)
     }
     return this.cached_getByUUID.get(itemid);
   }
-  async queryJsonPath(jsonpath: string, vars: Json = null): Promise<string[]> {
-    const jsonwhere = interpolate(jsonpath, vars);
-    let itemids = this.cached_queryJsonPath.get(jsonwhere);
+  async queryJsonPath(
+    path: string,
+    vars: Json = null,
+    orderBy?: string
+  ): Promise<string[]> {
+    const query = JSON.stringify({ path: interpolate(path, vars), orderBy });
+    let itemids = this.cached_queryJsonPath.get(query);
     if (itemids !== undefined) {
       return itemids;
     }
-    this.pending_queryJsonPath.add(jsonwhere);
+    this.pending_queryJsonPath.add(query);
     await this._pending();
-    return this.cached_queryJsonPath.get(jsonwhere) ?? [];
+    return this.cached_queryJsonPath.get(query) ?? [];
   }
 }
 

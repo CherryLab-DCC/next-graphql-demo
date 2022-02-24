@@ -11,7 +11,10 @@ export default function graphqlServerSideProps(
 ): GetServerSideProps {
   const validationErrors = validate(schema, document);
   if (validationErrors.length > 0) {
-    throw new AggregateError(validationErrors);
+    throw new AggregateError(
+      validationErrors,
+      validationErrors.map((err) => err.message).join("\n")
+    );
   }
   return withDB(async (db, context) => {
     const contextValue = { db };
