@@ -23,3 +23,10 @@ The GraphQL schema is generated from the encodeD JSON Schemas.
 
 * How should non-visible forward references be handled?
   Maybe just assume nullable even if required? But then how to get url of that page?
+
+# Running Docker
+
+```
+docker build . -t next-graphql-demo
+docker run -p 3000:3000 -e "PGHOST=host.docker.internal" -e "PGDATABASE=$USER" -e "PGUSER=$USER" -it next-graphql-demo
+```
