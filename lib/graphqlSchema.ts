@@ -4,11 +4,14 @@ import {
   GraphQLString,
   GraphQLNonNull,
   GraphQLInt,
+  GraphQLBoolean,
 } from "graphql";
 import {
   connectionArgs,
   connectionDefinitions,
   connectionFromArray,
+  cursorToOffset,
+  offsetToCursor,
 } from "graphql-relay";
 import jsonSchemaToGraphQL, {
   type Source,
@@ -21,8 +24,10 @@ const {
   _subtypes: subtypes,
   ...profiles
 } = profiles_json as any;
-// @ts-ignore: Object is possibly 'null'.
 profiles.Page.properties.parent.type = "string"; // ['string', 'null']
+profiles.Gene.required = profiles.Gene.required.filter(
+  (x: string) => x !== "organism"
+);
 
 const types = jsonSchemaToGraphQL(profiles, subtypes);
 
@@ -38,6 +43,7 @@ const { connectionType: itemConnection } = connectionDefinitions({
   },
   connectionFields: {
     totalCount: { type: new GraphQLNonNull(GraphQLInt) },
+    currentOffset: { type: new GraphQLNonNull(GraphQLInt) },
   },
 });
 
@@ -85,18 +91,61 @@ const query = new GraphQLObjectType<Source, Context>({
       type: new GraphQLNonNull(itemConnection), //new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(itemType))),
       args: {
         path: { type: new GraphQLNonNull(GraphQLString) },
+        offset: { type: GraphQLInt },
+        all: { type: GraphQLBoolean },
         orderBy: { type: GraphQLString },
         ...connectionArgs,
+        first: {
+          type: GraphQLInt,
+          description: "Returns the first n items from the list.",
+          defaultValue: 25,
+        },
+        last: {
+          type: GraphQLInt,
+          description: "Returns the last n items from the list.",
+          defaultValue: 25,
+        },
       },
       resolve: async (_, args, { db }) => {
+        let { path, offset, all, orderBy, after, before, first, last } = args;
         // Postgres GIN index does not help with sorting so faster to just fetch whole array here.
-        const ids = await db.queryJsonPath(
-          args.path,
-          null,
-          args.orderBy ?? undefined
-        );
+        const ids = await db.queryJsonPath(path, null, orderBy ?? undefined);
+        const totalCount = ids.length;
+        let currentOffset = 0;
+        if (all) {
+          first = null;
+          last = null;
+        }
+        // XXX: Should check precedence of after and before here.
+        if (after) {
+          last = null;
+          currentOffset = cursorToOffset(after) + 1;
+        } else if (before) {
+          first = null;
+          currentOffset = Math.max(
+            0,
+            cursorToOffset(before) - (last ?? ids.length)
+          );
+        } else if (typeof offset === "number") {
+          if (offset < 0) {
+            currentOffset = Math.max(0, ids.length - offset);
+          } else if (offset > 0) {
+            currentOffset = offset;
+            after = offsetToCursor(currentOffset - 1);
+          }
+        }
         // This risks page tearing when data is updated but meh.
-        return { totalCount: ids.length, ...connectionFromArray(ids, args) };
+        const { edges, pageInfo } = connectionFromArray(ids, {
+          after,
+          before,
+          first,
+          last,
+        });
+        // https://github.com/graphql/graphql-relay-js/issues/58
+        pageInfo.hasPreviousPage = currentOffset > 0;
+        pageInfo.hasNextPage = currentOffset + edges.length < ids.length;
+
+        return { totalCount, currentOffset, edges, pageInfo };
       },
     },
   }),

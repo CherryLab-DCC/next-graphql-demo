@@ -102,7 +102,7 @@ const resolveRef: GraphQLFieldResolver<Source, Context> = (
   return db.getByUUID(uuid);
 };
 
-const resolveRefList: GraphQLFieldResolver<Source, Context> = (
+const resolveRefList: GraphQLFieldResolver<Source, Context> = async (
   obj,
   _,
   { db },
@@ -112,9 +112,11 @@ const resolveRefList: GraphQLFieldResolver<Source, Context> = (
   if (!Array.isArray(uuids)) {
     return undefined;
   }
-  return uuids.map((uuid) =>
+  const results = await Promise.all(uuids.map((uuid) =>
     typeof uuid === "string" ? db.getByUUID(uuid) : undefined
-  );
+  ));
+  // XXX Objects may not be visible to current user.
+  return results.filter(obj => obj !== undefined);
 };
 
 function makeJsonPathConnection(
