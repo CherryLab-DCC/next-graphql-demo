@@ -51,3 +51,8 @@ CREATE TABLE public.items (
 -- After data is loaded create the index
 CREATE INDEX idx_items_gin ON items gin (object jsonb_path_ops, allowed jsonb_path_ops, uniquekeys jsonb_path_ops);
 ```
+
+For faster queries run the following and restart postgres:
+```sql
+ALTER SYSTEM SET shared_buffers = '1024MB';
+```
