@@ -36,7 +36,7 @@ At a psql prompt run
 
 
 ```sql
-CREATE TABLE public.items (
+CREATE TABLE items (
     id uuid PRIMARY KEY,
     object jsonb NOT NULL,
     allowed jsonb NOT NULL,
