@@ -26,7 +26,28 @@ The GraphQL schema is generated from the encodeD JSON Schemas.
 
 # Running Docker
 
-```
+```sh
 docker build . -t next-graphql-demo
 docker run -p 3000:3000 -e "PGHOST=host.docker.internal" -e "PGDATABASE=$USER" -e "PGUSER=$USER" -it next-graphql-demo
+```
+
+# Creating a local database
+At a psql prompt run
+
+
+```sql
+CREATE TABLE public.items (
+    id uuid PRIMARY KEY,
+    object jsonb NOT NULL,
+    allowed jsonb NOT NULL,
+    uniquekeys jsonb NOT NULL,
+    links jsonb NOT NULL,
+    audit jsonb NOT NULL
+);
+
+-- Load the data
+\copy items from program 'zcat items.tsv.gz'
+
+-- After data is loaded create the index
+CREATE INDEX idx_items_gin ON items gin (object jsonb_path_ops, allowed jsonb_path_ops, uniquekeys jsonb_path_ops);
 ```
