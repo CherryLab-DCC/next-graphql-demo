@@ -49,7 +49,7 @@ CREATE TABLE items (
 \copy items from program 'zcat items.tsv.gz'
 
 -- After data is loaded create the index
-CREATE INDEX idx_items_gin ON items gin (object jsonb_path_ops, allowed jsonb_path_ops, uniquekeys jsonb_path_ops);
+CREATE INDEX idx_items_gin ON items USING gin (object jsonb_path_ops, allowed jsonb_path_ops, uniquekeys jsonb_path_ops);
 ```
 
 For faster queries run the following and restart postgres:
